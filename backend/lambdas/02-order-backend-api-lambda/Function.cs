@@ -1,0 +1,131 @@
+using System.Text.Json;
+using Amazon.Lambda.APIGatewayEvents;
+using Amazon.Lambda.Core;
+using Amazon.Lambda.Serialization.SystemTextJson;
+using Amazon.SQS;
+using Amazon.SQS.Model;
+using Residencia.Foundation.Orders.Data;
+
+[assembly: LambdaSerializer(typeof(DefaultLambdaJsonSerializer))]
+
+namespace Residencia.Foundation.Orders;
+
+public sealed class Function
+{
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+    private readonly ICommerceRepository _repository;
+    private readonly IAmazonSQS _sqs;
+    private readonly string _queueUrl;
+
+    public Function()
+        : this(
+            RepositoryFactory.Create(),
+            new AmazonSQSClient(),
+            Environment.GetEnvironmentVariable("ORDER_QUEUE_URL")
+                ?? throw new InvalidOperationException("ORDER_QUEUE_URL is required.")
+        )
+    {
+    }
+
+    internal Function(ICommerceRepository repository, IAmazonSQS sqs, string queueUrl)
+    {
+        _repository = repository;
+        _sqs = sqs;
+        _queueUrl = queueUrl;
+    }
+
+    public async Task<APIGatewayHttpApiV2ProxyResponse> FunctionHandler(
+        APIGatewayHttpApiV2ProxyRequest request,
+        ILambdaContext context
+    )
+    {
+        try
+        {
+            var method = request.RequestContext.Http.Method;
+            var path = request.RawPath;
+            var claims = request.RequestContext.Authorizer?.Jwt?.Claims
+                ?? new Dictionary<string, string>();
+
+            if (method == "POST" && path == "/orders")
+                return await CreateOrder(request, claims);
+
+            if (method == "GET" && path == "/seller/orders")
+                return await ListSellerOrders(claims);
+
+            return Json(404, new { message = "Route not found." });
+        }
+        catch (Exception exception)
+        {
+            context.Logger.LogError(
+                "order-request-failed: {Message}\n{StackTrace}",
+                exception.Message,
+                exception.StackTrace
+            );
+            return Json(500, new { message = "Internal server error." });
+        }
+    }
+
+    private async Task<APIGatewayHttpApiV2ProxyResponse> CreateOrder(
+        APIGatewayHttpApiV2ProxyRequest request,
+        IDictionary<string, string> claims
+    )
+    {
+        if (!HasGroup(claims, "buyer"))
+            return Json(403, new { message = "Only buyers can create orders." });
+
+        var input = JsonSerializer.Deserialize<CreateOrderRequest>(request.Body ?? "{}", JsonOptions);
+        if (input is null || string.IsNullOrWhiteSpace(input.ProductId) || input.Quantity <= 0)
+            return Json(400, new { message = "productId and a positive quantity are required." });
+
+        var product = await _repository.FindProduct(input.ProductId);
+        if (product is null) return Json(404, new { message = "Product not found." });
+        if (product.Stock < input.Quantity) return Json(409, new { message = "Insufficient stock." });
+
+        var orderId = Guid.NewGuid().ToString();
+        var orderEvent = new OrderCreatedEvent(
+            orderId,
+            RequiredClaim(claims, "sub"),
+            product.SellerId,
+            product.Id,
+            input.Quantity,
+            DateTimeOffset.UtcNow,
+            orderId
+        );
+
+        await _sqs.SendMessageAsync(new SendMessageRequest
+        {
+            QueueUrl = _queueUrl,
+            MessageBody = JsonSerializer.Serialize(orderEvent, JsonOptions),
+        });
+
+        return Json(202, new { orderId, status = "accepted" });
+    }
+
+    private async Task<APIGatewayHttpApiV2ProxyResponse> ListSellerOrders(
+        IDictionary<string, string> claims
+    )
+    {
+        if (!HasGroup(claims, "seller"))
+            return Json(403, new { message = "Only sellers can list their orders." });
+
+        var orders = await _repository.ListSellerOrders(RequiredClaim(claims, "sub"));
+        return Json(200, new { items = orders });
+    }
+
+    private static bool HasGroup(IDictionary<string, string> claims, string group) =>
+        claims.TryGetValue("cognito:groups", out var value)
+        && value.Split([',', ' ', '[', ']', '"'], StringSplitOptions.RemoveEmptyEntries)
+            .Contains(group, StringComparer.OrdinalIgnoreCase);
+
+    private static string RequiredClaim(IDictionary<string, string> claims, string name) =>
+        claims.TryGetValue(name, out var value) && !string.IsNullOrWhiteSpace(value)
+            ? value
+            : throw new InvalidOperationException($"JWT claim {name} is required.");
+
+    private static APIGatewayHttpApiV2ProxyResponse Json(int statusCode, object body) => new()
+    {
+        StatusCode = statusCode,
+        Headers = new Dictionary<string, string> { ["content-type"] = "application/json" },
+        Body = JsonSerializer.Serialize(body, JsonOptions),
+    };
+}
