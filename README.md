@@ -15,13 +15,16 @@ residencia-trilha-foundation/
 │       ├── 02-order-backend-api-lambda/
 │       └── 03-order-processor-lambda/
 └── infrastructure/
+    ├── bootstrap.sh                   # aplica um profile
     ├── foundation/terraform-state/    # reservado para o remote state
     ├── profiles/                      # ponto inicial de cada sprint
     └── stacks/                        # root stacks Terraform evolutivas
         ├── 01-web-edge/
         ├── 02-identity/
         ├── 03-marketplace-api/
-        └── 04-database/
+        ├── 04-database/
+        ├── 05-container-platform/
+        └── 06-gitops/
 ```
 
 Os diretórios em `infrastructure/stacks` serão root stacks independentes, no
@@ -66,9 +69,12 @@ residencia-foundation/02-identity.tfstate
 residencia-foundation/03-marketplace-api.tfstate
 ```
 
-Os profiles `ready-for-sprint-01` até `ready-for-sprint-12` serão adicionados
-quando a automação com Terraform entrar na trilha. Um profile seleciona stacks;
-ele não cria outra versão da stack nem outro state.
+Os profiles `ready-for-sprint-01` até `ready-for-sprint-12`, mais o
+`complete`, reproduzem o ambiente ao final da sprint anterior. Um profile
+seleciona stacks; ele não cria outra versão da stack nem outro state.
+
+As cinco primeiras sprints são feitas pelo Console da AWS, então os profiles
+`ready-for-sprint-01` até `ready-for-sprint-05` não selecionam nenhuma stack.
 
 ### Voltar para uma sprint anterior
 
@@ -78,8 +84,7 @@ sprints posteriores ainda provisionadas.
 
 Para voltar de verdade, existe um ambiente ativo por vez. Primeiro, destrua o
 ambiente usando a versão e o profile atuais. Depois, faça checkout da tag
-desejada e aplique o profile correspondente. Quando o bootstrap estiver
-disponível, o fluxo será:
+desejada e aplique o profile correspondente:
 
 ```bash
 ./infrastructure/bootstrap.sh destroy ready-for-sprint-06
