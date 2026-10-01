@@ -159,3 +159,29 @@ cd dist && zip -r ../order-backend-api-lambda.zip . && cd ..
 
 Como atalho, execute `./backend/package.sh` na raiz do repositório. Ele repete
 os três fluxos e deixa cada ZIP dentro da pasta da Lambda correspondente.
+
+## Opcional: Layer para o driver PostgreSQL
+
+O build normal é autocontido: o `esbuild` inclui no `index.mjs` tanto os
+módulos do AWS SDK usados pela função quanto o pacote `pg`. O runtime Node.js 22
+também oferece o AWS SDK v3, mas manter as versões usadas dentro do pacote dá
+previsibilidade às atualizações. Portanto, não crie uma Layer apenas para os
+módulos AWS deste laboratório.
+
+Uma Layer passa a fazer sentido para a dependência externa `pg`, compartilhada
+pelos adapters RDS das Lambdas TypeScript de catálogo e processamento. Ela não
+se aplica à Lambda de pedidos, que usa .NET 8 e `Npgsql`.
+
+O script abaixo cria a estrutura `nodejs/node_modules` exigida pela Lambda,
+instala `pg`, gera o ZIP da Layer e recompila as duas funções TypeScript sem
+duplicar `pg` nos seus pacotes. Nenhuma alteração no código-fonte é necessária:
+
+```bash
+./backend/package-postgres-layer.sh
+```
+
+Publique `backend/layers/postgres-nodejs/postgres-nodejs-layer.zip` como uma
+Layer compatível com Node.js 22, anexe a mesma versão somente às funções
+`catalog-backend-api-lambda` e `order-processor-lambda` e envie novamente os
+ZIPs gerados pelo script. Enquanto `DATA_SOURCE=dynamodb`, valide o fluxo atual;
+quando o adapter RDS for ativado, o import de `pg` será resolvido pela Layer.

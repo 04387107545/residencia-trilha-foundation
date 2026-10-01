@@ -8,6 +8,7 @@
   },
   "scripts": {
     "build": "rm -rf dist && esbuild src/index.ts --bundle --platform=node --target=node22 --format=esm --outfile=dist/index.mjs",
+    "build:with-pg-layer": "rm -rf dist && esbuild src/index.ts --bundle --platform=node --target=node22 --format=esm --external:pg --outfile=dist/index.mjs",
     "check": "tsc --noEmit"
   },
   "dependencies": {

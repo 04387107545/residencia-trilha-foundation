@@ -3,6 +3,7 @@ build/
 dist/
 backend/dist/
 backend/lambdas/**/*.zip
+backend/layers/
 bin/
 obj/
 .env
