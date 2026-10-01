@@ -34,16 +34,16 @@ public sealed class Function
         _queueUrl = queueUrl;
     }
 
-    public async Task<APIGatewayHttpApiV2ProxyResponse> FunctionHandler(
-        APIGatewayHttpApiV2ProxyRequest request,
+    public async Task<APIGatewayProxyResponse> FunctionHandler(
+        APIGatewayProxyRequest request,
         ILambdaContext context
     )
     {
         try
         {
-            var method = request.RequestContext.Http.Method;
-            var path = request.RawPath;
-            var claims = request.RequestContext.Authorizer?.Jwt?.Claims
+            var method = request.HttpMethod;
+            var path = request.Path;
+            var claims = request.RequestContext.Authorizer?.Claims
                 ?? new Dictionary<string, string>();
 
             if (method == "POST" && path == "/orders")
@@ -68,8 +68,8 @@ public sealed class Function
         }
     }
 
-    private async Task<APIGatewayHttpApiV2ProxyResponse> CreateOrder(
-        APIGatewayHttpApiV2ProxyRequest request,
+    private async Task<APIGatewayProxyResponse> CreateOrder(
+        APIGatewayProxyRequest request,
         IDictionary<string, string> claims
     )
     {
@@ -101,7 +101,7 @@ public sealed class Function
         return Json(202, new { orderId, status = "accepted" });
     }
 
-    private async Task<APIGatewayHttpApiV2ProxyResponse> ListSellerOrders(
+    private async Task<APIGatewayProxyResponse> ListSellerOrders(
         IDictionary<string, string> claims
     )
     {
@@ -109,7 +109,7 @@ public sealed class Function
         return Json(200, new { items = orders });
     }
 
-    private async Task<APIGatewayHttpApiV2ProxyResponse> ListBuyerOrders(
+    private async Task<APIGatewayProxyResponse> ListBuyerOrders(
         IDictionary<string, string> claims
     )
     {
@@ -122,10 +122,16 @@ public sealed class Function
             ? value
             : throw new InvalidOperationException($"JWT claim {name} is required.");
 
-    private static APIGatewayHttpApiV2ProxyResponse Json(int statusCode, object body) => new()
+    private static APIGatewayProxyResponse Json(int statusCode, object body) => new()
     {
         StatusCode = statusCode,
-        Headers = new Dictionary<string, string> { ["content-type"] = "application/json" },
+        Headers = new Dictionary<string, string>
+        {
+            ["content-type"] = "application/json",
+            ["access-control-allow-origin"] = Environment.GetEnvironmentVariable("ALLOWED_ORIGIN") ?? "*",
+            ["access-control-allow-headers"] = "Content-Type,Authorization",
+            ["access-control-allow-methods"] = "GET,POST,PUT,DELETE,OPTIONS",
+        },
         Body = JsonSerializer.Serialize(body, JsonOptions),
     };
 }

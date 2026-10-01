@@ -72,7 +72,7 @@ const request = async <T>(user: AuthenticatedUser, path: string, options?: Reque
   const response = await fetch(`${apiUrl}${path}`, {
     ...options,
     headers: {
-      Authorization: `Bearer ${user.accessToken || user.idToken}`,
+      Authorization: `Bearer ${user.idToken || user.accessToken}`,
       "Content-Type": "application/json",
       ...options?.headers,
     },

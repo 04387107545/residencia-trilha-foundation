@@ -2,8 +2,8 @@ import { randomUUID } from "node:crypto";
 import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import type {
-  APIGatewayProxyEventV2,
-  APIGatewayProxyResultV2,
+  APIGatewayProxyEvent,
+  APIGatewayProxyResult,
 } from "aws-lambda";
 import { getProductsRepository } from "./repositories/index.js";
 import type { ProductInput } from "./repositories/types.js";
@@ -34,13 +34,18 @@ class HttpError extends Error {
 
 const s3 = new S3Client({});
 
-const json = (statusCode: number, body: JsonBody): APIGatewayProxyResultV2 => ({
+const json = (statusCode: number, body: JsonBody): APIGatewayProxyResult => ({
   statusCode,
-  headers: { "content-type": "application/json" },
+  headers: {
+    "content-type": "application/json",
+    "access-control-allow-origin": process.env.ALLOWED_ORIGIN ?? "*",
+    "access-control-allow-headers": "Content-Type,Authorization",
+    "access-control-allow-methods": "GET,POST,PUT,DELETE,OPTIONS",
+  },
   body: JSON.stringify(body),
 });
 
-const parseBody = (event: APIGatewayProxyEventV2): ProductRequest => {
+const parseBody = (event: APIGatewayProxyEvent): ProductRequest => {
   if (!event.body) return {};
 
   return JSON.parse(
@@ -50,15 +55,12 @@ const parseBody = (event: APIGatewayProxyEventV2): ProductRequest => {
   ) as ProductRequest;
 };
 
-const claimsFrom = (event: APIGatewayProxyEventV2): JwtClaims => {
-  const requestContext = event.requestContext as unknown as {
-    authorizer?: { jwt?: { claims?: JwtClaims } };
-  };
-  const authorizer = requestContext.authorizer;
-  return authorizer?.jwt?.claims ?? {};
+const claimsFrom = (event: APIGatewayProxyEvent): JwtClaims => {
+  const claims = event.requestContext.authorizer?.claims;
+  return (claims ?? {}) as JwtClaims;
 };
 
-const requireUser = (event: APIGatewayProxyEventV2): string => {
+const requireUser = (event: APIGatewayProxyEvent): string => {
   const claims = claimsFrom(event);
   if (typeof claims.sub !== "string") {
     throw new HttpError("Authenticated user identity is missing.", 401);
@@ -123,11 +125,11 @@ const withImageUrls = async <T extends { imageKeys: string[]; imageKey?: string 
 };
 
 export const handler = async (
-  event: APIGatewayProxyEventV2,
-): Promise<APIGatewayProxyResultV2> => {
+  event: APIGatewayProxyEvent,
+): Promise<APIGatewayProxyResult> => {
   try {
-    const method = event.requestContext.http.method;
-    const path = event.rawPath;
+    const method = event.httpMethod;
+    const path = event.path;
     const repository = await getProductsRepository();
 
     if (method === "GET" && path === "/products") {

@@ -10,7 +10,7 @@ repositório, sem mudar os handlers HTTP.
 ```text
 React SPA
   -> Cognito: cadastro, confirmação e login
-  -> API Gateway HTTP API + JWT authorizer
+  -> API Gateway REST API + Cognito user pool authorizer
       -> catalog-backend-api-lambda
           -> DynamoDB: produtos
           -> S3: URL pré-assinada da imagem
@@ -30,7 +30,7 @@ compra. Não é necessário adicionar usuários a grupos manualmente no Cognito.
 | Recurso | Nome |
 | --- | --- |
 | User pool | `residencia-foundation-users` |
-| API Gateway HTTP API | `residencia-foundation-http-api` |
+| API Gateway REST API | `residencia-foundation-rest-api` |
 | Tabela DynamoDB | `residencia-foundation-marketplace` |
 | Lambda de catálogo | `catalog-backend-api-lambda` |
 | Lambda de pedidos | `order-backend-api-lambda` |
@@ -62,7 +62,10 @@ de leitura para montar o carrossel no frontend.
 
 ## Rotas do API Gateway
 
-Todas as rotas usam o JWT authorizer do Cognito.
+Todos os métodos usam o Cognito user pool authorizer. Como esta sprint não cria
+resource server nem scopes customizados, a SPA envia o ID token no header
+`Authorization`; os claims ficam disponíveis em
+`requestContext.authorizer.claims` nas integrações Lambda proxy.
 
 | Método | Rota | Integração |
 | --- | --- | --- |
@@ -75,8 +78,10 @@ Todas as rotas usam o JWT authorizer do Cognito.
 | `GET` | `/seller/orders` | Lambda de pedidos |
 
 As quatro operações de produto continuam na mesma Lambda de catálogo. Configure
-CORS na HTTP API com a origem do CloudFront, os métodos `GET`, `POST`, `PUT`,
-`DELETE` e `OPTIONS`, e os cabeçalhos `Authorization` e `Content-Type`.
+CORS na REST API exige um método `OPTIONS` sem authorizer em cada recurso e os
+headers `Access-Control-Allow-*` nas respostas das Lambdas proxy. O código já
+devolve esses headers usando `ALLOWED_ORIGIN`; configure a origem do CloudFront
+nas duas Lambdas HTTP.
 
 ## Variáveis de ambiente
 
@@ -88,6 +93,7 @@ MARKETPLACE_TABLE_NAME=residencia-foundation-marketplace
 PRODUCT_IMAGES_BUCKET=residencia-foundation-product-images-<account-id>
 UPLOAD_URL_TTL_SECONDS=900
 DOWNLOAD_URL_TTL_SECONDS=3600
+ALLOWED_ORIGIN=https://seu-dominio.com
 ```
 
 ### Lambda de pedidos
@@ -96,6 +102,7 @@ DOWNLOAD_URL_TTL_SECONDS=3600
 DATA_SOURCE=dynamodb
 MARKETPLACE_TABLE_NAME=residencia-foundation-marketplace
 ORDER_QUEUE_URL=https://sqs.us-east-1.amazonaws.com/<account-id>/order-events-queue
+ALLOWED_ORIGIN=https://seu-dominio.com
 ```
 
 ### Lambda processadora

@@ -157,14 +157,14 @@ VITE_APP_MODE=production
 VITE_AWS_REGION=us-east-1
 VITE_COGNITO_USER_POOL_ID=us-east-1_xxxxxxxxx
 VITE_COGNITO_CLIENT_ID=xxxxxxxxxxxxxxxxxxxxxxxxxx
-VITE_API_URL=https://xxxxxxxxxx.execute-api.us-east-1.amazonaws.com
+VITE_API_URL=https://xxxxxxxxxx.execute-api.us-east-1.amazonaws.com/prod
 ```
 
 O arquivo [`site/.env.sprint-02.example`](site/.env.sprint-02.example) já contém
 esse modelo. Copie-o para `site/.env.production.local`, preencha os valores dos
 recursos criados no laboratório e gere um novo build.
 
-Depois da autenticação, todas as chamadas ao API Gateway enviam o access token
+Depois da autenticação, todas as chamadas ao API Gateway enviam o ID token
 JWT no cabeçalho `Authorization: Bearer <token>`.
 
 Com `VITE_APP_MODE=production`, o frontend não usa os dados locais. O selo muda
