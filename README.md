@@ -136,40 +136,59 @@ O endereço local padrão é `http://localhost:5173`.
 
 ## Autenticação
 
-Na Sprint 1, o site usa autenticação mock:
+No desenvolvimento local, o site usa autenticação e dados mock:
 
 ```env
-VITE_AUTH_MODE=mock
+VITE_APP_MODE=mock
 ```
 
 O formulário aceita qualquer e-mail válido e uma senha com pelo menos seis
-caracteres. O código do primeiro acesso e da recuperação de senha já está
-preparado para o Amazon Cognito.
+caracteres. O modo local permite validar cadastro de produto, compra, estoque e
+pedidos sem criar recursos na AWS. Nesse modo, sessão, produtos e pedidos ficam
+no `localStorage` daquele navegador. Um selo visível identifica o ambiente como
+`Mock mode · dados locais`.
 
-Na Sprint 2, nenhuma mudança no código do frontend é necessária. Basta informar:
+Na Sprint 2, o frontend já está preparado para cadastro, confirmação de e-mail,
+login, primeiro acesso, recuperação de senha e restauração da sessão pelo
+Amazon Cognito. Informe:
 
 ```env
-VITE_AUTH_MODE=cognito
+VITE_APP_MODE=production
 VITE_AWS_REGION=us-east-1
 VITE_COGNITO_USER_POOL_ID=us-east-1_xxxxxxxxx
 VITE_COGNITO_CLIENT_ID=xxxxxxxxxxxxxxxxxxxxxxxxxx
 VITE_API_URL=https://xxxxxxxxxx.execute-api.us-east-1.amazonaws.com
 ```
 
+O arquivo [`site/.env.sprint-02.example`](site/.env.sprint-02.example) já contém
+esse modelo. Copie-o para `site/.env.production.local`, preencha os valores dos
+recursos criados no laboratório e gere um novo build.
+
+Depois da autenticação, todas as chamadas ao API Gateway enviam o access token
+JWT no cabeçalho `Authorization: Bearer <token>`.
+
+Com `VITE_APP_MODE=production`, o frontend não usa os dados locais. O selo muda
+para `Production · AWS` e as operações passam a usar Cognito e API Gateway.
+
+O carrinho permanece no navegador, separado por usuário, até a conclusão da
+compra. Produtos, estoque e pedidos usam a API. Cada produto aceita até oito
+imagens; o DynamoDB guarda a lista de chaves e os arquivos permanecem no S3.
+
 ## Backend da Sprint 2
 
-O código das três Lambdas já está pronto. O trabalho do aluno é empacotar,
-publicar e conectar os recursos pelo Console da AWS.
+O código das três Lambdas e a SPA do marketplace já estão prontos. O trabalho
+do aluno é empacotar, publicar e conectar os recursos pelo Console da AWS.
 
 | Lambda | Runtime | Responsabilidade |
 | --- | --- | --- |
-| `catalog-backend-api-lambda` | TypeScript (Node.js 22) | Consultar e cadastrar produtos e gerar upload opcional de imagem |
-| `order-backend-api-lambda` | .NET | Consultar pedidos do seller e publicar novas compras na SQS |
-| `order-processor-lambda` | TypeScript (Node.js 22) | Consumir a SQS e processar o pedido de forma assíncrona |
+| `catalog-backend-api-lambda` | TypeScript (Node.js 22) | Consultar e cadastrar produtos no DynamoDB e gerar URLs temporárias para imagens no S3 |
+| `order-backend-api-lambda` | .NET 8 | Consultar compras e vendas e publicar novas compras na SQS |
+| `order-processor-lambda` | TypeScript (Node.js 22) | Consumir a SQS e atualizar estoque e pedido numa transação do DynamoDB |
 
-As Lambdas iniciam com `DATA_SOURCE=mock`. Os adapters para RDS já estão
-separados e serão ativados na Sprint 3 com `DATA_SOURCE=rds` e as variáveis de
-conexão. Nenhuma mudança na regra de negócio ou nos handlers será necessária.
+Na Sprint 2, as Lambdas usam `DATA_SOURCE=dynamodb`. A tabela substitui o mock
+em memória e torna o fluxo consistente entre Lambdas e cold starts. Os adapters
+para RDS continuam separados e poderão ser ativados depois com
+`DATA_SOURCE=rds` e as variáveis de conexão, sem alterar os handlers.
 
 Consulte [backend/README.md](backend/README.md) para conhecer os packages, os
 handlers e as variáveis de ambiente.

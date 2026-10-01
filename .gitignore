@@ -2,6 +2,7 @@ node_modules/
 build/
 dist/
 backend/dist/
+backend/lambdas/**/*.zip
 bin/
 obj/
 .env

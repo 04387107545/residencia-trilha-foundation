@@ -49,6 +49,9 @@ public sealed class Function
             if (method == "POST" && path == "/orders")
                 return await CreateOrder(request, claims);
 
+            if (method == "GET" && path == "/orders")
+                return await ListBuyerOrders(claims);
+
             if (method == "GET" && path == "/seller/orders")
                 return await ListSellerOrders(claims);
 
@@ -70,9 +73,6 @@ public sealed class Function
         IDictionary<string, string> claims
     )
     {
-        if (!HasGroup(claims, "buyer"))
-            return Json(403, new { message = "Only buyers can create orders." });
-
         var input = JsonSerializer.Deserialize<CreateOrderRequest>(request.Body ?? "{}", JsonOptions);
         if (input is null || string.IsNullOrWhiteSpace(input.ProductId) || input.Quantity <= 0)
             return Json(400, new { message = "productId and a positive quantity are required." });
@@ -105,17 +105,17 @@ public sealed class Function
         IDictionary<string, string> claims
     )
     {
-        if (!HasGroup(claims, "seller"))
-            return Json(403, new { message = "Only sellers can list their orders." });
-
         var orders = await _repository.ListSellerOrders(RequiredClaim(claims, "sub"));
         return Json(200, new { items = orders });
     }
 
-    private static bool HasGroup(IDictionary<string, string> claims, string group) =>
-        claims.TryGetValue("cognito:groups", out var value)
-        && value.Split([',', ' ', '[', ']', '"'], StringSplitOptions.RemoveEmptyEntries)
-            .Contains(group, StringComparer.OrdinalIgnoreCase);
+    private async Task<APIGatewayHttpApiV2ProxyResponse> ListBuyerOrders(
+        IDictionary<string, string> claims
+    )
+    {
+        var orders = await _repository.ListBuyerOrders(RequiredClaim(claims, "sub"));
+        return Json(200, new { items = orders });
+    }
 
     private static string RequiredClaim(IDictionary<string, string> claims, string name) =>
         claims.TryGetValue(name, out var value) && !string.IsNullOrWhiteSpace(value)

@@ -58,6 +58,33 @@ public sealed class RdsCommerceRepository : ICommerceRepository
         return orders;
     }
 
+    public async Task<IReadOnlyList<SellerOrder>> ListBuyerOrders(string buyerId)
+    {
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync();
+        await using var command = new NpgsqlCommand(
+            """
+            SELECT id, buyer_id, seller_id, product_id, quantity, status, created_at
+            FROM orders
+            WHERE buyer_id = @buyerId
+            ORDER BY created_at DESC
+            """,
+            connection
+        );
+        command.Parameters.AddWithValue("buyerId", buyerId);
+        await using var reader = await command.ExecuteReaderAsync();
+        var orders = new List<SellerOrder>();
+        while (await reader.ReadAsync())
+        {
+            orders.Add(new SellerOrder(
+                reader.GetString(0), reader.GetString(1), reader.GetString(2),
+                reader.GetString(3), reader.GetInt32(4), reader.GetString(5),
+                reader.GetFieldValue<DateTimeOffset>(6)
+            ));
+        }
+        return orders;
+    }
+
     private static string BuildConnectionString()
     {
         var builder = new NpgsqlConnectionStringBuilder
