@@ -160,28 +160,30 @@ cd dist && zip -r ../order-backend-api-lambda.zip . && cd ..
 Como atalho, execute `./backend/package.sh` na raiz do repositório. Ele repete
 os três fluxos e deixa cada ZIP dentro da pasta da Lambda correspondente.
 
-## Opcional: Layer para o driver PostgreSQL
+## Opcional: Layer para controlar a versão do AWS SDK
 
 O build normal é autocontido: o `esbuild` inclui no `index.mjs` tanto os
-módulos do AWS SDK usados pela função quanto o pacote `pg`. O runtime Node.js 22
-também oferece o AWS SDK v3, mas manter as versões usadas dentro do pacote dá
-previsibilidade às atualizações. Portanto, não crie uma Layer apenas para os
-módulos AWS deste laboratório.
+módulos do AWS SDK usados pela função. Esse continua sendo o caminho principal
+da sprint. O runtime Node.js 22 também oferece o AWS SDK v3, mas a versão pode
+mudar quando a AWS atualiza o runtime. Como exercício opcional, uma Layer permite
+fixar uma versão e compartilhá-la entre as duas Lambdas TypeScript sem alterar o
+código-fonte.
 
-Uma Layer passa a fazer sentido para a dependência externa `pg`, compartilhada
-pelos adapters RDS das Lambdas TypeScript de catálogo e processamento. Ela não
-se aplica à Lambda de pedidos, que usa .NET 8 e `Npgsql`.
-
-O script abaixo cria a estrutura `nodejs/node_modules` exigida pela Lambda,
-instala `pg`, gera o ZIP da Layer e recompila as duas funções TypeScript sem
-duplicar `pg` nos seus pacotes. Nenhuma alteração no código-fonte é necessária:
+O script abaixo lê do `package-lock.json` as versões já testadas, cria a
+estrutura `nodejs/node_modules` exigida pela Lambda, gera o ZIP da Layer e
+recompila as funções de catálogo e processamento sem colocar outra cópia do SDK
+em cada pacote:
 
 ```bash
-./backend/package-postgres-layer.sh
+./backend/package-aws-sdk-layer.sh
 ```
 
-Publique `backend/layers/postgres-nodejs/postgres-nodejs-layer.zip` como uma
-Layer compatível com Node.js 22, anexe a mesma versão somente às funções
-`catalog-backend-api-lambda` e `order-processor-lambda` e envie novamente os
-ZIPs gerados pelo script. Enquanto `DATA_SOURCE=dynamodb`, valide o fluxo atual;
-quando o adapter RDS for ativado, o import de `pg` será resolvido pela Layer.
+Publique `backend/layers/aws-sdk-nodejs/aws-sdk-nodejs-layer.zip` como uma Layer
+compatível com Node.js 22, anexe a mesma versão somente às funções
+`catalog-backend-api-lambda` e `order-processor-lambda` e envie novamente seus
+ZIPs. A Lambda `order-backend-api-lambda` permanece fora desse exercício porque
+usa .NET 8. Repita o fluxo de catálogo e compra e compare os tamanhos dos ZIPs.
+
+A aplicação não precisa dessa Layer para funcionar: sem ela, use o build normal,
+que continua carregando as dependências dentro de cada função. O objetivo é
+discutir controle de versão, compartilhamento e acoplamento de deploy.
