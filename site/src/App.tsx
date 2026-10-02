@@ -39,6 +39,11 @@ const validEmail = (value: string) => /^\S+@\S+\.\S+$/.test(value);
 const money = (value: number) => new Intl.NumberFormat("pt-BR", {
   style: "currency", currency: "BRL",
 }).format(value / 100);
+const orderStatusLabel = (status: string) => {
+  if (status === "processed") return "Confirmado";
+  if (status === "accepted" || status === "pending") return "Pendente";
+  return status;
+};
 
 const productImages = (product: Product): string[] =>
   product.imageUrls?.length ? product.imageUrls : product.imageUrl ? [product.imageUrl] : [];
@@ -214,10 +219,22 @@ function Marketplace({ user, onLogout }: { user: AuthenticatedUser; onLogout: ()
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [cartOpen, setCartOpen] = useState(false);
   const cartStorageKey = `foundation-market:cart:${user.sub}`;
+  const pendingOrdersStorageKey = `foundation-market:pending-orders:${user.sub}`;
   const [cart, setCart] = useState<CartItem[]>(() => {
     const stored = window.localStorage.getItem(cartStorageKey);
     return stored ? JSON.parse(stored) as CartItem[] : [];
   });
+  const [pendingOrders, setPendingOrders] = useState<Order[]>(() => {
+    const stored = window.localStorage.getItem(pendingOrdersStorageKey);
+    return stored ? JSON.parse(stored) as Order[] : [];
+  });
+
+  const applyOrders = (nextPurchases: Order[], nextSales: Order[]) => {
+    setPurchases(nextPurchases); setSales(nextSales);
+    const confirmedIds = new Set([...nextPurchases, ...nextSales].map((order) => order.id));
+    setPendingOrders((current) => current.filter((order) => !confirmedIds.has(order.id)));
+    return confirmedIds;
+  };
 
   const refresh = async () => {
     setError("");
@@ -225,25 +242,70 @@ function Marketplace({ user, onLogout }: { user: AuthenticatedUser; onLogout: ()
       const [nextProducts, nextPurchases, nextSales] = await Promise.all([
         listProducts(user), listBuyerOrders(user), listSellerOrders(user),
       ]);
-      setProducts(nextProducts); setPurchases(nextPurchases); setSales(nextSales);
+      setProducts(nextProducts); applyOrders(nextPurchases, nextSales);
     } catch (failure) { setError(errorMessage(failure)); }
     finally { setLoading(false); }
   };
 
   useEffect(() => { void refresh(); }, []);
   useEffect(() => { window.localStorage.setItem(cartStorageKey, JSON.stringify(cart)); }, [cart, cartStorageKey]);
+  useEffect(() => { window.localStorage.setItem(pendingOrdersStorageKey, JSON.stringify(pendingOrders)); }, [pendingOrders, pendingOrdersStorageKey]);
   const productById = useMemo(() => new Map(products.map((product) => [product.id, product])), [products]);
   const myProducts = useMemo(() => products.filter((product) => product.sellerId === user.sub), [products, user.sub]);
+  const visiblePurchases = useMemo(() => {
+    const confirmedIds = new Set(purchases.map((order) => order.id));
+    return [...pendingOrders.filter((order) => order.buyerId === user.sub && !confirmedIds.has(order.id)), ...purchases]
+      .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+  }, [pendingOrders, purchases, user.sub]);
+  const visibleSales = useMemo(() => {
+    const confirmedIds = new Set(sales.map((order) => order.id));
+    return [...pendingOrders.filter((order) => order.sellerId === user.sub && !confirmedIds.has(order.id)), ...sales]
+      .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+  }, [pendingOrders, sales, user.sub]);
   const cartCount = cart.reduce((total, item) => total + item.quantity, 0);
+
+  const trackPendingOrder = (orderId: string, product: Product, quantity: number) => {
+    const pendingOrder: Order = {
+      id: orderId,
+      buyerId: user.sub,
+      sellerId: product.sellerId,
+      productId: product.id,
+      quantity,
+      status: "pending",
+      createdAt: new Date().toISOString(),
+    };
+    setPendingOrders((current) => [pendingOrder, ...current.filter((order) => order.id !== orderId)]);
+  };
+
+  const pollOrder = (orderId: string, attempt = 0) => {
+    const delays = [600, 1_200, 2_000, 3_500, 5_000];
+    window.setTimeout(async () => {
+      try {
+        const [nextPurchases, nextSales] = await Promise.all([
+          listBuyerOrders(user), listSellerOrders(user),
+        ]);
+        const confirmedIds = applyOrders(nextPurchases, nextSales);
+        if (confirmedIds.has(orderId)) {
+          setFeedback(`Pedido ${orderId.slice(0, 8)} confirmado.`);
+          return;
+        }
+      } catch {
+        // A atualização automática tenta novamente enquanto o pedido permanece pendente.
+      }
+      if (attempt < delays.length - 1) pollOrder(orderId, attempt + 1);
+    }, delays[attempt]);
+  };
 
   const buy = async (product: Product, requestedQuantity?: number) => {
     const quantity = requestedQuantity ?? 1;
     setBusy(`buy:${product.id}`); setError(""); setFeedback("");
     try {
       const result = await createOrder(user, product.id, quantity);
-      setFeedback(`Compra confirmada. Pedido ${result.orderId.slice(0, 8)} enviado para processamento.`);
+      trackPendingOrder(result.orderId, product, quantity);
+      setFeedback(`Pedido ${result.orderId.slice(0, 8)} recebido e pendente de confirmação.`);
       setSelectedProduct(null);
-      window.setTimeout(() => void refresh(), isMockMode ? 0 : 900);
+      setView("orders");
+      pollOrder(result.orderId);
     } catch (failure) { setError(errorMessage(failure)); }
     finally { setBusy(""); }
   };
@@ -271,11 +333,19 @@ function Marketplace({ user, onLogout }: { user: AuthenticatedUser; onLogout: ()
   const checkoutCart = async () => {
     setBusy("cart"); setError("");
     try {
-      for (const item of cart) await createOrder(user, item.productId, item.quantity);
+      const pendingIds: string[] = [];
+      for (const item of cart) {
+        const product = productById.get(item.productId);
+        if (!product) continue;
+        const result = await createOrder(user, item.productId, item.quantity);
+        trackPendingOrder(result.orderId, product, item.quantity);
+        pendingIds.push(result.orderId);
+      }
       const purchased = cart.length;
       setCart([]); setCartOpen(false);
-      setFeedback(`${purchased} ${purchased === 1 ? "produto comprado" : "produtos comprados"}. Pedidos enviados para processamento.`);
-      window.setTimeout(() => void refresh(), isMockMode ? 0 : 900);
+      setView("orders");
+      setFeedback(`${purchased} ${purchased === 1 ? "pedido pendente" : "pedidos pendentes"} de confirmação.`);
+      pendingIds.forEach((orderId) => pollOrder(orderId));
     } catch (failure) { setError(errorMessage(failure)); }
     finally { setBusy(""); }
   };
@@ -331,7 +401,7 @@ function Marketplace({ user, onLogout }: { user: AuthenticatedUser; onLogout: ()
           <div className="product-copy"><h3>{product.name}</h3><p>{product.description || "Produto sem descrição."}</p><div><strong>{money(product.priceCents)}</strong><span>{product.stock} em estoque</span></div></div>
           <div className="product-card-action"><button onClick={() => setSelectedProduct(product)}>Ver produto <b>→</b></button></div>
         </article>)}</div>}
-      </> : view === "products" ? <ProductsView products={myProducts} busy={busy} onCreate={openCreate} onEdit={openEdit} onDelete={(product) => void removeProduct(product)} onDeleteMany={(selectedProducts) => void removeProducts(selectedProducts)} /> : <OrdersView purchases={purchases} sales={sales} productById={productById} />}
+      </> : view === "products" ? <ProductsView products={myProducts} busy={busy} onCreate={openCreate} onEdit={openEdit} onDelete={(product) => void removeProduct(product)} onDeleteMany={(selectedProducts) => void removeProducts(selectedProducts)} /> : <OrdersView purchases={visiblePurchases} sales={visibleSales} productById={productById} />}
     </section>
     {showProductForm && <ProductDialog user={user} product={editingProduct} onClose={() => setShowProductForm(false)} onSaved={async () => { setShowProductForm(false); setFeedback(editingProduct ? "Produto atualizado." : "Produto cadastrado e disponível no catálogo."); await refresh(); }} />}
     {selectedProduct && <ProductDetail product={selectedProduct} busy={busy === `buy:${selectedProduct.id}`} onClose={() => setSelectedProduct(null)} onBuy={(quantity) => void buy(selectedProduct, quantity)} onAddCart={(quantity) => addToCart(selectedProduct, quantity)} />}
@@ -428,7 +498,7 @@ function CartDrawer({ cart, productById, busy, onClose, onQuantity, onCheckout }
 }
 
 function OrdersView({ purchases, sales, productById }: { purchases: Order[]; sales: Order[]; productById: Map<string, Product> }) {
-  const table = (orders: Order[], empty: string) => orders.length === 0 ? <p className="empty-state">{empty}</p> : <div className="orders-table">{orders.map((order) => <div key={order.id}><span className={`order-status ${order.status}`}>{order.status}</span><div><strong>{productById.get(order.productId)?.name ?? order.productId}</strong><small>Pedido {order.id.slice(0, 8)} · {new Date(order.createdAt).toLocaleString("pt-BR")}</small></div><b>{order.quantity} un.</b></div>)}</div>;
+  const table = (orders: Order[], empty: string) => orders.length === 0 ? <p className="empty-state">{empty}</p> : <div className="orders-table">{orders.map((order) => <div key={order.id}><span className={`order-status ${order.status}`}>{orderStatusLabel(order.status)}</span><div><strong>{productById.get(order.productId)?.name ?? order.productId}</strong><small>Pedido {order.id.slice(0, 8)} · {new Date(order.createdAt).toLocaleString("pt-BR")}</small></div><b>{order.quantity} un.</b></div>)}</div>;
   return <section className="orders-page"><div className="orders-hero"><span>PEDIDOS / DYNAMODB</span><h1>O que você comprou.<em>O que você vendeu.</em></h1></div><div className="orders-columns"><section><header><span>COMPRAS</span><strong>{purchases.length}</strong></header>{table(purchases, "Você ainda não fez nenhuma compra.")}</section><section><header><span>VENDAS</span><strong>{sales.length}</strong></header>{table(sales, "Nenhum pedido recebido para seus produtos.")}</section></div></section>;
 }
 
