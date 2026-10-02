@@ -291,6 +291,27 @@ function Marketplace({ user, onLogout }: { user: AuthenticatedUser; onLogout: ()
     finally { setBusy(""); }
   };
 
+  const removeProducts = async (selectedProducts: Product[]) => {
+    if (selectedProducts.length === 0) return;
+    const label = selectedProducts.length === 1 ? "produto selecionado" : "produtos selecionados";
+    if (!window.confirm(`Remover ${selectedProducts.length} ${label} do catálogo?`)) return;
+    setBusy("delete:bulk"); setError(""); setFeedback("");
+    try {
+      const results = await Promise.allSettled(
+        selectedProducts.map((product) => deleteProduct(user, product.id)),
+      );
+      const removed = results.filter((result) => result.status === "fulfilled").length;
+      const failed = results.length - removed;
+      await refresh();
+      if (removed > 0) {
+        setFeedback(`${removed} ${removed === 1 ? "produto removido" : "produtos removidos"} do catálogo.`);
+      }
+      if (failed > 0) {
+        setError(`${failed} ${failed === 1 ? "produto não pôde" : "produtos não puderam"} ser removido${failed === 1 ? "" : "s"}.`);
+      }
+    } finally { setBusy(""); }
+  };
+
   const openCreate = () => { setEditingProduct(null); setShowProductForm(true); };
   const openEdit = (product: Product) => { setEditingProduct(product); setShowProductForm(true); };
 
@@ -310,7 +331,7 @@ function Marketplace({ user, onLogout }: { user: AuthenticatedUser; onLogout: ()
           <div className="product-copy"><h3>{product.name}</h3><p>{product.description || "Produto sem descrição."}</p><div><strong>{money(product.priceCents)}</strong><span>{product.stock} em estoque</span></div></div>
           <div className="product-card-action"><button onClick={() => setSelectedProduct(product)}>Ver produto <b>→</b></button></div>
         </article>)}</div>}
-      </> : view === "products" ? <ProductsView products={myProducts} busy={busy} onCreate={openCreate} onEdit={openEdit} onDelete={(product) => void removeProduct(product)} /> : <OrdersView purchases={purchases} sales={sales} productById={productById} />}
+      </> : view === "products" ? <ProductsView products={myProducts} busy={busy} onCreate={openCreate} onEdit={openEdit} onDelete={(product) => void removeProduct(product)} onDeleteMany={(selectedProducts) => void removeProducts(selectedProducts)} /> : <OrdersView purchases={purchases} sales={sales} productById={productById} />}
     </section>
     {showProductForm && <ProductDialog user={user} product={editingProduct} onClose={() => setShowProductForm(false)} onSaved={async () => { setShowProductForm(false); setFeedback(editingProduct ? "Produto atualizado." : "Produto cadastrado e disponível no catálogo."); await refresh(); }} />}
     {selectedProduct && <ProductDetail product={selectedProduct} busy={busy === `buy:${selectedProduct.id}`} onClose={() => setSelectedProduct(null)} onBuy={(quantity) => void buy(selectedProduct, quantity)} onAddCart={(quantity) => addToCart(selectedProduct, quantity)} />}
@@ -367,8 +388,26 @@ function ImageLightbox({ images, activeImage, onChange, onClose }: { images: str
   return <div className="image-lightbox" role="dialog" aria-modal="true" aria-label="Pré-visualização das imagens do produto" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><section><header><div><span>GALERIA DO PRODUTO</span><strong>{activeImage + 1} de {images.length}</strong></div><button type="button" onClick={onClose} aria-label="Fechar pré-visualização">×</button></header><div className="lightbox-image"><img src={images[activeImage]} alt={`Imagem ampliada ${activeImage + 1}`} />{images.length > 1 && <><button type="button" className="lightbox-previous" onClick={() => move(-1)} aria-label="Imagem anterior">‹</button><button type="button" className="lightbox-next" onClick={() => move(1)} aria-label="Próxima imagem">›</button></>}</div>{images.length > 1 && <div className="lightbox-thumbnails">{images.map((image, index) => <button type="button" className={index === activeImage ? "active" : ""} onClick={() => onChange(index)} aria-label={`Ver imagem ${index + 1}`} key={`${image}-${index}`}><img src={image} alt="" /></button>)}</div>}</section></div>;
 }
 
-function ProductsView({ products, busy, onCreate, onEdit, onDelete }: { products: Product[]; busy: string; onCreate: () => void; onEdit: (product: Product) => void; onDelete: (product: Product) => void }) {
-  return <section className="managed-products"><div className="managed-products-hero"><div><span>GESTÃO / MEUS PRODUTOS</span><h1>Seu catálogo.<em>Sob seu controle.</em></h1><p>Edite informações e estoque ou remova um produto da vitrine.</p></div><button onClick={onCreate}>Novo produto <b>+</b></button></div>{products.length === 0 ? <p className="empty-state">Você ainda não cadastrou produtos.</p> : <div className="products-table"><div className="products-table-head"><span>PRODUTO</span><span>PREÇO</span><span>ESTOQUE</span><span>AÇÕES</span></div>{products.map((product) => <div className="products-table-row" key={product.id}><div className="managed-product"><span>{productImages(product)[0] ? <img src={productImages(product)[0]} alt="" /> : product.name.slice(0, 2).toUpperCase()}</span><div><strong>{product.name}</strong><small>{product.description || "Sem descrição"}</small></div></div><strong>{money(product.priceCents)}</strong><span className={product.stock === 0 ? "out-of-stock" : ""}>{product.stock} un.</span><div className="product-actions"><button onClick={() => onEdit(product)}>Editar</button><button className="danger" disabled={busy === `delete:${product.id}`} onClick={() => onDelete(product)}>{busy === `delete:${product.id}` ? "Removendo" : "Remover"}</button></div></div>)}</div>}</section>;
+function ProductsView({ products, busy, onCreate, onEdit, onDelete, onDeleteMany }: { products: Product[]; busy: string; onCreate: () => void; onEdit: (product: Product) => void; onDelete: (product: Product) => void; onDeleteMany: (products: Product[]) => void }) {
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const selectedProducts = products.filter((product) => selectedIds.includes(product.id));
+  const allSelected = products.length > 0 && selectedProducts.length === products.length;
+
+  useEffect(() => {
+    setSelectedIds((current) => current.filter((id) => products.some((product) => product.id === id)));
+  }, [products]);
+
+  const toggleProduct = (productId: string) => {
+    setSelectedIds((current) => current.includes(productId)
+      ? current.filter((id) => id !== productId)
+      : [...current, productId]);
+  };
+
+  const toggleAll = () => {
+    setSelectedIds(allSelected ? [] : products.map((product) => product.id));
+  };
+
+  return <section className="managed-products"><div className="managed-products-hero"><div><span>GESTÃO / MEUS PRODUTOS</span><h1>Seu catálogo.<em>Sob seu controle.</em></h1><p>Edite informações e estoque ou remova produtos da vitrine.</p></div><button onClick={onCreate}>Novo produto <b>+</b></button></div>{products.length === 0 ? <p className="empty-state">Você ainda não cadastrou produtos.</p> : <><div className="products-bulk-actions"><label><input type="checkbox" checked={allSelected} onChange={toggleAll} />Selecionar todos</label><span>{selectedProducts.length} {selectedProducts.length === 1 ? "selecionado" : "selecionados"}</span><button className="danger" disabled={selectedProducts.length === 0 || busy === "delete:bulk"} onClick={() => onDeleteMany(selectedProducts)}>{busy === "delete:bulk" ? "Excluindo..." : "Excluir selecionados"}</button></div><div className="products-table"><div className="products-table-head"><span className="product-heading"><input type="checkbox" checked={allSelected} onChange={toggleAll} aria-label="Selecionar todos os produtos" />PRODUTO</span><span>PREÇO</span><span>ESTOQUE</span><span>AÇÕES</span></div>{products.map((product) => <div className={`products-table-row ${selectedIds.includes(product.id) ? "selected" : ""}`} key={product.id}><div className="managed-product"><input type="checkbox" checked={selectedIds.includes(product.id)} onChange={() => toggleProduct(product.id)} aria-label={`Selecionar ${product.name}`} /><span>{productImages(product)[0] ? <img src={productImages(product)[0]} alt="" /> : product.name.slice(0, 2).toUpperCase()}</span><div><strong>{product.name}</strong><small>{product.description || "Sem descrição"}</small></div></div><strong>{money(product.priceCents)}</strong><span className={product.stock === 0 ? "out-of-stock" : ""}>{product.stock} un.</span><div className="product-actions"><button onClick={() => onEdit(product)}>Editar</button><button className="danger" disabled={busy === `delete:${product.id}` || busy === "delete:bulk"} onClick={() => onDelete(product)}>{busy === `delete:${product.id}` ? "Removendo" : "Remover"}</button></div></div>)}</div></>}</section>;
 }
 
 function ProductDetail({ product, busy, onClose, onBuy, onAddCart }: { product: Product; busy: boolean; onClose: () => void; onBuy: (quantity: number) => void; onAddCart: (quantity: number) => void }) {
