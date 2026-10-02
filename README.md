@@ -15,33 +15,52 @@ residencia-trilha-foundation/
 │       ├── 02-order-backend-api-lambda/
 │       └── 03-order-processor-lambda/
 └── infrastructure/
-    ├── bootstrap.sh                   # aplica um profile
-    ├── foundation/terraform-state/    # reservado para o remote state
-    ├── profiles/                      # ponto inicial de cada sprint
-    └── stacks/                        # root stacks Terraform evolutivas
-        ├── 01-web-edge/
-        ├── 02-identity/
-        ├── 03-marketplace-api/
-        ├── 04-database/
-        ├── 05-container-platform/
-        └── 06-gitops/
+    ├── catch-up/                      # baselines cumulativos em CloudFormation
+    │   ├── baselines/
+    │   └── components/
+    └── terraform/                     # IaC criada durante a trilha
+        ├── bootstrap.sh
+        ├── foundation/
+        └── stacks/
 ```
 
-Os diretórios em `infrastructure/stacks` serão root stacks independentes, no
-mesmo padrão da Trilha Professional. Eles ainda não possuem arquivos `.tf`.
+Catch-up e Terraform possuem ciclos de vida diferentes. O catch-up entrega os
+pré-requisitos para uma pessoa entrar na sprint atual. O diretório Terraform
+recebe apenas as stacks que forem implementadas como parte dos desafios.
 
-## Como as sprints, as stacks e o state se relacionam
+| Necessidade | Caminho | Ferramenta |
+| --- | --- | --- |
+| Entrar em uma sprint já iniciada | `infrastructure/catch-up` | CloudFormation |
+| Executar os desafios atuais | `site` e `backend` | Console da AWS e código da aplicação |
+| Construir IaC quando ela entrar na trilha | `infrastructure/terraform` | Terraform |
 
-Não existe uma cópia da infraestrutura para cada sprint. Cada diretório em
-`infrastructure/stacks` representa uma responsabilidade e evolui no mesmo lugar
-ao longo da trilha. Por exemplo, `01-web-edge` continuará sendo a stack de S3,
-CloudFront, ACM e Route 53 quando novas capacidades forem adicionadas.
+Não existem profiles Terraform por sprint. Os pontos de entrada ficam somente
+nos baselines do catch-up.
 
-Existem três conceitos diferentes:
+## Catch-up para quem entra na Sprint 2
+
+Quem começa diretamente na Sprint 2 pode preparar o resultado funcional da
+Sprint 1 sem executar o laboratório anterior. O catch-up cria um bucket S3
+privado e uma distribuição CloudFront por CloudFormation, gera o frontend em
+modo mock e publica os arquivos. Ele usa a URL padrão do CloudFront, sem domínio
+customizado.
+
+```bash
+AWS_PROFILE=seu-profile \
+  ./infrastructure/catch-up/bootstrap.sh apply ready-for-sprint-02
+```
+
+Esse fluxo prepara o ambiente; ele não substitui o conteúdo ou as evidências da
+Sprint 1. Consulte [infrastructure/catch-up/README.md](infrastructure/catch-up/README.md)
+para acompanhar os eventos, verificar o ambiente ou removê-lo.
+
+## Catch-up, tags e Terraform
+
+Existem três conceitos independentes:
 
 - a tag do Git determina a versão do código disponível naquele ponto da trilha;
-- o profile determina quais stacks formam o ambiente inicial de uma sprint;
-- o state continua independente por stack e acompanha a evolução do ambiente.
+- um baseline de catch-up prepara os pré-requisitos de quem entra em uma sprint;
+- uma root stack Terraform representa infraestrutura construída pelo residente.
 
 O início de cada sprint será marcado por uma tag. Assim, uma pessoa que entrar
 diretamente na Sprint 6 poderá usar `start-sprint-06`. Essa versão já conterá o
@@ -57,11 +76,11 @@ start-sprint-06  -> frontend da Sprint 5 pronto; início do próximo desafio
 A `main` representa o ponto mais recente já liberado. As tags preservam os
 pontos anteriores sem duplicar diretórios ou manter uma branch por sprint.
 
-### Evolução normal do ambiente
+### Quando Terraform entrar na trilha
 
-No avanço entre sprints, as mesmas stacks e os mesmos states são utilizados. O
-Terraform compara a nova versão do código com a infraestrutura existente e faz
-somente as alterações necessárias. As chaves seguirão este padrão:
+Não existem profiles Terraform por sprint. Cada root stack aparece somente no
+momento em que passa a fazer parte do conteúdo e evolui no mesmo diretório nas
+sprints seguintes. O state continua independente por stack:
 
 ```text
 residencia-foundation/01-web-edge.tfstate
@@ -69,32 +88,21 @@ residencia-foundation/02-identity.tfstate
 residencia-foundation/03-marketplace-api.tfstate
 ```
 
-Os profiles `ready-for-sprint-01` até `ready-for-sprint-12`, mais o
-`complete`, reproduzem o ambiente ao final da sprint anterior. Um profile
-seleciona stacks; ele não cria outra versão da stack nem outro state.
-
-As cinco primeiras sprints são feitas pelo Console da AWS, então os profiles
-`ready-for-sprint-01` até `ready-for-sprint-05` não selecionam nenhuma stack.
-
-### Voltar para uma sprint anterior
-
-Fazer apenas o checkout de uma tag antiga não altera a conta AWS. Aplicar código
-antigo contra um ambiente mais novo pode remover recursos ou deixar stacks de
-sprints posteriores ainda provisionadas.
-
-Para voltar de verdade, existe um ambiente ativo por vez. Primeiro, destrua o
-ambiente usando a versão e o profile atuais. Depois, faça checkout da tag
-desejada e aplique o profile correspondente:
+Uma stack é executada explicitamente, sem associá-la a um baseline:
 
 ```bash
-./infrastructure/bootstrap.sh destroy ready-for-sprint-06
-git checkout start-sprint-05
-./infrastructure/bootstrap.sh apply ready-for-sprint-05
+RESIDENCIA_STATE_BUCKET=meu-state-bucket \
+  ./infrastructure/terraform/bootstrap.sh apply 01-web-edge
 ```
 
-Manter duas sprints provisionadas simultaneamente exigiria states e nomes de
-recursos isolados. Esse cenário não faz parte do fluxo padrão, para manter a
-experiência do aluno simples.
+Ao chegar à sprint que introduz Terraform, remova primeiro o ambiente equivalente
+criado pelo catch-up. CloudFormation e Terraform não devem administrar os mesmos
+recursos simultaneamente. Consulte
+[infrastructure/terraform/README.md](infrastructure/terraform/README.md) para a
+convenção das root stacks e do state.
+
+Fazer checkout de uma tag não altera a conta AWS. Antes de voltar para uma tag
+anterior, remova o baseline ou as stacks atualmente provisionadas.
 
 ## Sprint 1: criar seu fork
 
@@ -182,8 +190,8 @@ do aluno é empacotar, publicar e conectar os recursos pelo Console da AWS.
 | Lambda | Runtime | Responsabilidade |
 | --- | --- | --- |
 | `catalog-backend-api-lambda` | TypeScript (Node.js 24) | Consultar e cadastrar produtos no DynamoDB e gerar URLs temporárias para imagens no S3 |
-| `order-backend-api-lambda` | .NET 8 | Consultar compras e vendas e publicar novas compras na SQS |
-| `order-processor-lambda` | TypeScript (Node.js 24) | Consumir a SQS e atualizar estoque e pedido numa transação do DynamoDB |
+| `order-backend-api-lambda` | .NET 8 | Consultar compras e vendas, gravar o pedido como `pending` e publicar o evento na SQS |
+| `order-processor-lambda` | TypeScript (Node.js 24) | Consumir a SQS, baixar o estoque e confirmar o pedido numa transação do DynamoDB |
 
 Na Sprint 2, as Lambdas usam `DATA_SOURCE=dynamodb`. A tabela substitui o mock
 em memória e torna o fluxo consistente entre Lambdas e cold starts. Os adapters
