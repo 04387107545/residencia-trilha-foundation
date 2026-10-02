@@ -18,6 +18,8 @@ export type Product = {
 export type Order = {
   id: string;
   buyerId: string;
+  buyerName?: string | null;
+  buyerEmail?: string | null;
   sellerId: string;
   productId: string;
   quantity: number;
@@ -202,7 +204,8 @@ export const createOrder = async (
     if (product.stock < quantity) throw new Error("Estoque insuficiente.");
     product.stock -= quantity;
     const order: Order = {
-      id: crypto.randomUUID(), buyerId: user.sub, sellerId: product.sellerId,
+      id: crypto.randomUUID(), buyerId: user.sub, buyerName: user.name, buyerEmail: user.email,
+      sellerId: product.sellerId,
       productId, quantity, status: "processed", createdAt: new Date().toISOString(),
     };
     state.orders.unshift(order);

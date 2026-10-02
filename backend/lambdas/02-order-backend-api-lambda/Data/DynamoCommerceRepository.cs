@@ -48,22 +48,28 @@ public sealed class DynamoCommerceRepository : ICommerceRepository
 
     public async Task CreatePendingOrder(SellerOrder order, string idempotencyKey)
     {
+        var item = new Dictionary<string, AttributeValue>
+        {
+            ["pk"] = new() { S = $"ORDER#{order.Id}" },
+            ["entityType"] = new() { S = "ORDER" },
+            ["id"] = new() { S = order.Id },
+            ["buyerId"] = new() { S = order.BuyerId },
+            ["sellerId"] = new() { S = order.SellerId },
+            ["productId"] = new() { S = order.ProductId },
+            ["quantity"] = new() { N = order.Quantity.ToString() },
+            ["status"] = new() { S = order.Status },
+            ["idempotencyKey"] = new() { S = idempotencyKey },
+            ["createdAt"] = new() { S = order.CreatedAt.ToString("O") },
+        };
+        if (!string.IsNullOrWhiteSpace(order.BuyerName))
+            item["buyerName"] = new() { S = order.BuyerName };
+        if (!string.IsNullOrWhiteSpace(order.BuyerEmail))
+            item["buyerEmail"] = new() { S = order.BuyerEmail };
+
         await _dynamoDb.PutItemAsync(new PutItemRequest
         {
             TableName = _tableName,
-            Item = new Dictionary<string, AttributeValue>
-            {
-                ["pk"] = new() { S = $"ORDER#{order.Id}" },
-                ["entityType"] = new() { S = "ORDER" },
-                ["id"] = new() { S = order.Id },
-                ["buyerId"] = new() { S = order.BuyerId },
-                ["sellerId"] = new() { S = order.SellerId },
-                ["productId"] = new() { S = order.ProductId },
-                ["quantity"] = new() { N = order.Quantity.ToString() },
-                ["status"] = new() { S = order.Status },
-                ["idempotencyKey"] = new() { S = idempotencyKey },
-                ["createdAt"] = new() { S = order.CreatedAt.ToString("O") },
-            },
+            Item = item,
             ConditionExpression = "attribute_not_exists(pk)",
         });
     }
@@ -99,7 +105,16 @@ public sealed class DynamoCommerceRepository : ICommerceRepository
             item["productId"].S,
             int.Parse(item["quantity"].N),
             item["status"].S,
-            DateTimeOffset.Parse(item["createdAt"].S)
+            DateTimeOffset.Parse(item["createdAt"].S),
+            StringValue(item, "buyerName"),
+            StringValue(item, "buyerEmail")
         )).OrderByDescending(order => order.CreatedAt).ToArray();
     }
+
+    private static string? StringValue(
+        IReadOnlyDictionary<string, AttributeValue> item,
+        string name
+    ) => item.TryGetValue(name, out var value) && !string.IsNullOrWhiteSpace(value.S)
+        ? value.S
+        : null;
 }

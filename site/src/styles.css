@@ -1138,6 +1138,7 @@ a:focus-visible {
 .orders-table > div > div strong, .orders-table > div > div small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .orders-table > div > div strong { font-size: 14px; }
 .orders-table > div > div small { color: #727971; font-size: 10px; }
+.orders-table > div > div .order-buyer { color: #343934; font-size: 11px; font-weight: 700; }
 .orders-table > div > b { font-size: 12px; }
 .order-status { padding: 6px 8px; color: #725204; background: #fff0b8; font-size: 8px; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
 .order-status.processed { color: #294c1f; background: #dff1d7; }

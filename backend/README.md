@@ -57,6 +57,9 @@ A Lambda de pedidos grava o item com status `pending` antes de publicar o evento
 na SQS. A Lambda processadora usa `TransactWriteItems` para que a baixa do
 estoque e a mudança do pedido para `processed` aconteçam juntas. Assim, a tela
 de pedidos lê o estado real do DynamoDB durante todo o processamento.
+O pedido também registra `buyerName` e `buyerEmail` a partir dos claims do ID
+token para que o vendedor identifique quem realizou a compra. Itens antigos,
+que possuem somente `buyerId`, continuam compatíveis com a listagem.
 
 Cada item de produto mantém `imageKeys`, uma lista com até oito chaves do S3.
 A Lambda de catálogo gera uma URL de upload para cada arquivo e URLs temporárias

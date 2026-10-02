@@ -83,14 +83,21 @@ public sealed class Function
 
         var orderId = Guid.NewGuid().ToString();
         var createdAt = DateTimeOffset.UtcNow;
+        var buyerId = RequiredClaim(claims, "sub");
+        var buyerEmail = OptionalClaim(claims, "email");
+        var buyerName = OptionalClaim(claims, "name")
+            ?? OptionalClaim(claims, "given_name")
+            ?? NameFromEmail(buyerEmail);
         var orderEvent = new OrderCreatedEvent(
             orderId,
-            RequiredClaim(claims, "sub"),
+            buyerId,
             product.SellerId,
             product.Id,
             input.Quantity,
             createdAt,
-            orderId
+            orderId,
+            buyerName,
+            buyerEmail
         );
         var pendingOrder = new SellerOrder(
             orderEvent.OrderId,
@@ -99,7 +106,9 @@ public sealed class Function
             orderEvent.ProductId,
             orderEvent.Quantity,
             "pending",
-            createdAt
+            createdAt,
+            buyerName,
+            buyerEmail
         );
 
         await _repository.CreatePendingOrder(pendingOrder, orderEvent.IdempotencyKey);
@@ -133,6 +142,22 @@ public sealed class Function
         claims.TryGetValue(name, out var value) && !string.IsNullOrWhiteSpace(value)
             ? value
             : throw new InvalidOperationException($"JWT claim {name} is required.");
+
+    private static string? OptionalClaim(IDictionary<string, string> claims, string name) =>
+        claims.TryGetValue(name, out var value) && !string.IsNullOrWhiteSpace(value)
+            ? value.Trim()
+            : null;
+
+    private static string? NameFromEmail(string? email)
+    {
+        if (string.IsNullOrWhiteSpace(email)) return null;
+        var localPart = email.Split('@', 2)[0];
+        return string.Join(
+            " ",
+            localPart.Split(['.', '_', '-'], StringSplitOptions.RemoveEmptyEntries)
+                .Select(part => char.ToUpperInvariant(part[0]) + part[1..])
+        );
+    }
 
     private static APIGatewayProxyResponse Json(int statusCode, object body) => new()
     {

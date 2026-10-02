@@ -476,8 +476,14 @@ function CartDrawer({ cart, productById, busy, onClose, onQuantity, onCheckout }
 }
 
 function OrdersView({ purchases, sales, productById }: { purchases: Order[]; sales: Order[]; productById: Map<string, Product> }) {
-  const table = (orders: Order[], empty: string) => orders.length === 0 ? <p className="empty-state">{empty}</p> : <div className="orders-table">{orders.map((order) => <div key={order.id}><span className={`order-status ${order.status}`}>{orderStatusLabel(order.status)}</span><div><strong>{productById.get(order.productId)?.name ?? order.productId}</strong><small>Pedido {order.id.slice(0, 8)} · {new Date(order.createdAt).toLocaleString("pt-BR")}</small></div><b>{order.quantity} un.</b></div>)}</div>;
-  return <section className="orders-page"><div className="orders-hero"><span>PEDIDOS / DYNAMODB</span><h1>O que você comprou.<em>O que você vendeu.</em></h1></div><div className="orders-columns"><section><header><span>COMPRAS</span><strong>{purchases.length}</strong></header>{table(purchases, "Você ainda não fez nenhuma compra.")}</section><section><header><span>VENDAS</span><strong>{sales.length}</strong></header>{table(sales, "Nenhum pedido recebido para seus produtos.")}</section></div></section>;
+  const buyerLabel = (order: Order) => {
+    const name = order.buyerName?.trim();
+    const email = order.buyerEmail?.trim();
+    if (name && email) return `${name} · ${email}`;
+    return name || email || order.buyerId;
+  };
+  const table = (orders: Order[], empty: string, showBuyer = false) => orders.length === 0 ? <p className="empty-state">{empty}</p> : <div className="orders-table">{orders.map((order) => <div key={order.id}><span className={`order-status ${order.status}`}>{orderStatusLabel(order.status)}</span><div><strong>{productById.get(order.productId)?.name ?? order.productId}</strong>{showBuyer && <small className="order-buyer">Comprador: {buyerLabel(order)}</small>}<small>Pedido {order.id.slice(0, 8)} · {new Date(order.createdAt).toLocaleString("pt-BR")}</small></div><b>{order.quantity} un.</b></div>)}</div>;
+  return <section className="orders-page"><div className="orders-hero"><span>PEDIDOS / DYNAMODB</span><h1>O que você comprou.<em>O que você vendeu.</em></h1></div><div className="orders-columns"><section><header><span>COMPRAS</span><strong>{purchases.length}</strong></header>{table(purchases, "Você ainda não fez nenhuma compra.")}</section><section><header><span>VENDAS</span><strong>{sales.length}</strong></header>{table(sales, "Nenhum pedido recebido para seus produtos.", true)}</section></div></section>;
 }
 
 export default function App() {
