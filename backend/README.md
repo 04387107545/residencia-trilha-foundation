@@ -166,31 +166,3 @@ cd dist && zip -r ../order-backend-api-lambda.zip . && cd ..
 
 Como atalho, execute `./backend/package.sh` na raiz do repositório. Ele repete
 os três fluxos e deixa cada ZIP dentro da pasta da Lambda correspondente.
-
-## Opcional: Layer para controlar a versão do AWS SDK
-
-O build normal é autocontido: o `esbuild` inclui no `index.mjs` tanto os
-módulos do AWS SDK usados pela função. Esse continua sendo o caminho principal
-da sprint. O runtime Node.js 24 também oferece o AWS SDK v3, mas a versão pode
-mudar quando a AWS atualiza o runtime. Como exercício opcional, uma Layer permite
-fixar uma versão e compartilhá-la entre as duas Lambdas TypeScript sem alterar o
-código-fonte.
-
-O script abaixo lê do `package-lock.json` as versões já testadas, cria a
-estrutura `nodejs/node_modules` exigida pela Lambda, gera o ZIP da Layer e
-recompila as funções de catálogo e processamento sem colocar outra cópia do SDK
-em cada pacote:
-
-```bash
-./backend/package-aws-sdk-layer.sh
-```
-
-Publique `backend/layers/aws-sdk-nodejs/aws-sdk-nodejs-layer.zip` como uma Layer
-compatível com Node.js 24, anexe a mesma versão somente às funções
-`catalog-backend-api-lambda` e `order-processor-lambda` e envie novamente seus
-ZIPs. A Lambda `order-backend-api-lambda` permanece fora desse exercício porque
-usa .NET 8. Repita o fluxo de catálogo e compra e compare os tamanhos dos ZIPs.
-
-A aplicação não precisa dessa Layer para funcionar: sem ela, use o build normal,
-que continua carregando as dependências dentro de cada função. O objetivo é
-discutir controle de versão, compartilhamento e acoplamento de deploy.

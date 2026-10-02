@@ -77,7 +77,8 @@ const validateProduct = (input: ProductRequest) => {
   }
 };
 
-const productIdFrom = (path: string): string | null => {
+const productIdFrom = (path?: string | null): string | null => {
+  if (!path) return null;
   const match = path.match(/^\/products\/([^/]+)$/);
   return match?.[1] ? decodeURIComponent(match[1]) : null;
 };
@@ -130,6 +131,9 @@ export const handler = async (
   try {
     const method = event.httpMethod;
     const path = event.path;
+    if (!method || !path) {
+      throw new Error("API Gateway Lambda proxy integration is required.");
+    }
     const repository = await getProductsRepository();
 
     if (method === "GET" && path === "/products") {
