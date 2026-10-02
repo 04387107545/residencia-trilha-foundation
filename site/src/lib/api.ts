@@ -194,7 +194,7 @@ export const createOrder = async (
   user: AuthenticatedUser,
   productId: string,
   quantity: number,
-): Promise<{ orderId: string; status: string }> => {
+): Promise<{ orderId: string; status: string; order?: Order }> => {
   if (isMockMode) {
     const state = readMockState();
     const product = state.products.find((item) => item.id === productId);
@@ -207,7 +207,7 @@ export const createOrder = async (
     };
     state.orders.unshift(order);
     writeMockState(state);
-    return { orderId: order.id, status: order.status };
+    return { orderId: order.id, status: order.status, order };
   }
   return request(user, "/orders", {
     method: "POST",

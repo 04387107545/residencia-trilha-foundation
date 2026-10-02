@@ -21,10 +21,47 @@ export class DynamoDbOrderProcessor implements OrderProcessor {
       Key: { pk: orderKey },
       ConsistentRead: true,
     }));
-    if (existing.Item) return { status: "duplicate", orderId: order.orderId };
+    if (existing.Item?.status === "processed") {
+      return { status: "duplicate", orderId: order.orderId };
+    }
+    if (existing.Item && existing.Item.status !== "pending") {
+      throw new Error(`Order ${order.orderId} has unsupported status ${existing.Item.status}.`);
+    }
 
     const productKey = `PRODUCT#${order.productId}`;
     const createdAt = order.occurredAt;
+    const orderWrite = existing.Item ? {
+      Update: {
+        TableName: tableName(),
+        Key: { pk: orderKey },
+        UpdateExpression: "SET #status = :processed, processedAt = :processedAt",
+        ConditionExpression: "attribute_exists(pk) AND #status = :pending AND idempotencyKey = :idempotencyKey",
+        ExpressionAttributeNames: { "#status": "status" },
+        ExpressionAttributeValues: {
+          ":pending": "pending",
+          ":processed": "processed",
+          ":processedAt": new Date().toISOString(),
+          ":idempotencyKey": order.idempotencyKey,
+        },
+      },
+    } : {
+      Put: {
+        TableName: tableName(),
+        Item: {
+          pk: orderKey,
+          entityType: "ORDER",
+          id: order.orderId,
+          buyerId: order.buyerId,
+          sellerId: order.sellerId,
+          productId: order.productId,
+          quantity: order.quantity,
+          status: "processed",
+          idempotencyKey: order.idempotencyKey,
+          createdAt,
+        },
+        ConditionExpression: "attribute_not_exists(pk)",
+      },
+    };
     await client.send(new TransactWriteCommand({
       TransactItems: [
         {
@@ -39,24 +76,7 @@ export class DynamoDbOrderProcessor implements OrderProcessor {
             },
           },
         },
-        {
-          Put: {
-            TableName: tableName(),
-            Item: {
-              pk: orderKey,
-              entityType: "ORDER",
-              id: order.orderId,
-              buyerId: order.buyerId,
-              sellerId: order.sellerId,
-              productId: order.productId,
-              quantity: order.quantity,
-              status: "processed",
-              idempotencyKey: order.idempotencyKey,
-              createdAt,
-            },
-            ConditionExpression: "attribute_not_exists(pk)",
-          },
-        },
+        orderWrite,
       ],
     }));
 

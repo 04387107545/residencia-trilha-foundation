@@ -25,6 +25,30 @@ public sealed class RdsCommerceRepository : ICommerceRepository
         );
     }
 
+    public async Task CreatePendingOrder(SellerOrder order, string idempotencyKey)
+    {
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync();
+        await using var command = new NpgsqlCommand(
+            """
+            INSERT INTO orders (
+                id, buyer_id, seller_id, product_id, quantity, status,
+                idempotency_key, created_at
+            )
+            VALUES (@id, @buyerId, @sellerId, @productId, @quantity, 'pending', @idempotencyKey, @createdAt)
+            """,
+            connection
+        );
+        command.Parameters.AddWithValue("id", order.Id);
+        command.Parameters.AddWithValue("buyerId", order.BuyerId);
+        command.Parameters.AddWithValue("sellerId", order.SellerId);
+        command.Parameters.AddWithValue("productId", order.ProductId);
+        command.Parameters.AddWithValue("quantity", order.Quantity);
+        command.Parameters.AddWithValue("idempotencyKey", idempotencyKey);
+        command.Parameters.AddWithValue("createdAt", order.CreatedAt);
+        await command.ExecuteNonQueryAsync();
+    }
+
     public async Task<IReadOnlyList<SellerOrder>> ListSellerOrders(string sellerId)
     {
         await using var connection = new NpgsqlConnection(_connectionString);

@@ -219,21 +219,13 @@ function Marketplace({ user, onLogout }: { user: AuthenticatedUser; onLogout: ()
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [cartOpen, setCartOpen] = useState(false);
   const cartStorageKey = `foundation-market:cart:${user.sub}`;
-  const pendingOrdersStorageKey = `foundation-market:pending-orders:${user.sub}`;
   const [cart, setCart] = useState<CartItem[]>(() => {
     const stored = window.localStorage.getItem(cartStorageKey);
     return stored ? JSON.parse(stored) as CartItem[] : [];
   });
-  const [pendingOrders, setPendingOrders] = useState<Order[]>(() => {
-    const stored = window.localStorage.getItem(pendingOrdersStorageKey);
-    return stored ? JSON.parse(stored) as Order[] : [];
-  });
 
   const applyOrders = (nextPurchases: Order[], nextSales: Order[]) => {
     setPurchases(nextPurchases); setSales(nextSales);
-    const confirmedIds = new Set([...nextPurchases, ...nextSales].map((order) => order.id));
-    setPendingOrders((current) => current.filter((order) => !confirmedIds.has(order.id)));
-    return confirmedIds;
   };
 
   const refresh = async () => {
@@ -249,43 +241,29 @@ function Marketplace({ user, onLogout }: { user: AuthenticatedUser; onLogout: ()
 
   useEffect(() => { void refresh(); }, []);
   useEffect(() => { window.localStorage.setItem(cartStorageKey, JSON.stringify(cart)); }, [cart, cartStorageKey]);
-  useEffect(() => { window.localStorage.setItem(pendingOrdersStorageKey, JSON.stringify(pendingOrders)); }, [pendingOrders, pendingOrdersStorageKey]);
+  useEffect(() => { window.localStorage.removeItem(`foundation-market:pending-orders:${user.sub}`); }, [user.sub]);
   const productById = useMemo(() => new Map(products.map((product) => [product.id, product])), [products]);
   const myProducts = useMemo(() => products.filter((product) => product.sellerId === user.sub), [products, user.sub]);
-  const visiblePurchases = useMemo(() => {
-    const confirmedIds = new Set(purchases.map((order) => order.id));
-    return [...pendingOrders.filter((order) => order.buyerId === user.sub && !confirmedIds.has(order.id)), ...purchases]
-      .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
-  }, [pendingOrders, purchases, user.sub]);
-  const visibleSales = useMemo(() => {
-    const confirmedIds = new Set(sales.map((order) => order.id));
-    return [...pendingOrders.filter((order) => order.sellerId === user.sub && !confirmedIds.has(order.id)), ...sales]
-      .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
-  }, [pendingOrders, sales, user.sub]);
   const cartCount = cart.reduce((total, item) => total + item.quantity, 0);
 
-  const trackPendingOrder = (orderId: string, product: Product, quantity: number) => {
-    const pendingOrder: Order = {
-      id: orderId,
-      buyerId: user.sub,
-      sellerId: product.sellerId,
-      productId: product.id,
-      quantity,
-      status: "pending",
-      createdAt: new Date().toISOString(),
-    };
-    setPendingOrders((current) => [pendingOrder, ...current.filter((order) => order.id !== orderId)]);
+  const showStoredOrder = (order: Order) => {
+    setPurchases((current) => [order, ...current.filter((item) => item.id !== order.id)]);
+    if (order.sellerId === user.sub) {
+      setSales((current) => [order, ...current.filter((item) => item.id !== order.id)]);
+    }
   };
 
   const pollOrder = (orderId: string, attempt = 0) => {
-    const delays = [600, 1_200, 2_000, 3_500, 5_000];
+    const delays = [600, 1_200, 2_000, 3_500, 5_000, 8_000, 12_000, 15_000];
     window.setTimeout(async () => {
       try {
         const [nextPurchases, nextSales] = await Promise.all([
           listBuyerOrders(user), listSellerOrders(user),
         ]);
-        const confirmedIds = applyOrders(nextPurchases, nextSales);
-        if (confirmedIds.has(orderId)) {
+        applyOrders(nextPurchases, nextSales);
+        const trackedOrder = [...nextPurchases, ...nextSales]
+          .find((order) => order.id === orderId);
+        if (trackedOrder?.status === "processed") {
           setFeedback(`Pedido ${orderId.slice(0, 8)} confirmado.`);
           return;
         }
@@ -301,7 +279,7 @@ function Marketplace({ user, onLogout }: { user: AuthenticatedUser; onLogout: ()
     setBusy(`buy:${product.id}`); setError(""); setFeedback("");
     try {
       const result = await createOrder(user, product.id, quantity);
-      trackPendingOrder(result.orderId, product, quantity);
+      if (result.order) showStoredOrder(result.order);
       setFeedback(`Pedido ${result.orderId.slice(0, 8)} recebido e pendente de confirmação.`);
       setSelectedProduct(null);
       setView("orders");
@@ -338,7 +316,7 @@ function Marketplace({ user, onLogout }: { user: AuthenticatedUser; onLogout: ()
         const product = productById.get(item.productId);
         if (!product) continue;
         const result = await createOrder(user, item.productId, item.quantity);
-        trackPendingOrder(result.orderId, product, item.quantity);
+        if (result.order) showStoredOrder(result.order);
         pendingIds.push(result.orderId);
       }
       const purchased = cart.length;
@@ -401,7 +379,7 @@ function Marketplace({ user, onLogout }: { user: AuthenticatedUser; onLogout: ()
           <div className="product-copy"><h3>{product.name}</h3><p>{product.description || "Produto sem descrição."}</p><div><strong>{money(product.priceCents)}</strong><span>{product.stock} em estoque</span></div></div>
           <div className="product-card-action"><button onClick={() => setSelectedProduct(product)}>Ver produto <b>→</b></button></div>
         </article>)}</div>}
-      </> : view === "products" ? <ProductsView products={myProducts} busy={busy} onCreate={openCreate} onEdit={openEdit} onDelete={(product) => void removeProduct(product)} onDeleteMany={(selectedProducts) => void removeProducts(selectedProducts)} /> : <OrdersView purchases={visiblePurchases} sales={visibleSales} productById={productById} />}
+      </> : view === "products" ? <ProductsView products={myProducts} busy={busy} onCreate={openCreate} onEdit={openEdit} onDelete={(product) => void removeProduct(product)} onDeleteMany={(selectedProducts) => void removeProducts(selectedProducts)} /> : <OrdersView purchases={purchases} sales={sales} productById={productById} />}
     </section>
     {showProductForm && <ProductDialog user={user} product={editingProduct} onClose={() => setShowProductForm(false)} onSaved={async () => { setShowProductForm(false); setFeedback(editingProduct ? "Produto atualizado." : "Produto cadastrado e disponível no catálogo."); await refresh(); }} />}
     {selectedProduct && <ProductDetail product={selectedProduct} busy={busy === `buy:${selectedProduct.id}`} onClose={() => setSelectedProduct(null)} onBuy={(quantity) => void buy(selectedProduct, quantity)} onAddCart={(quantity) => addToCart(selectedProduct, quantity)} />}

@@ -15,10 +15,10 @@ React SPA
           -> DynamoDB: produtos
           -> S3: URL pré-assinada da imagem
       -> order-backend-api-lambda
-          -> DynamoDB: consulta produto e pedidos
+          -> DynamoDB: consulta produto e grava pedido pending
           -> SQS: publica OrderCreated
               -> order-processor-lambda
-                  -> DynamoDB TransactWrite: baixa estoque + grava pedido
+                  -> DynamoDB TransactWrite: baixa estoque + confirma pedido
 ```
 
 Uma conta autenticada pode comprar e vender. O `sub` do JWT identifica o
@@ -53,8 +53,10 @@ com filtros, uma decisão intencional para manter o laboratório simples. Esse
 acesso não é o desenho indicado para uma tabela grande e será substituído pela
 camada de RDS em uma sprint posterior.
 
-A Lambda processadora usa `TransactWriteItems` para que a baixa do estoque e a
-criação do pedido aconteçam juntas.
+A Lambda de pedidos grava o item com status `pending` antes de publicar o evento
+na SQS. A Lambda processadora usa `TransactWriteItems` para que a baixa do
+estoque e a mudança do pedido para `processed` aconteçam juntas. Assim, a tela
+de pedidos lê o estado real do DynamoDB durante todo o processamento.
 
 Cada item de produto mantém `imageKeys`, uma lista com até oito chaves do S3.
 A Lambda de catálogo gera uma URL de upload para cada arquivo e URLs temporárias
@@ -117,9 +119,11 @@ MARKETPLACE_TABLE_NAME=residencia-foundation-marketplace
 - catálogo: `dynamodb:GetItem`, `dynamodb:PutItem`, `dynamodb:DeleteItem`,
   `dynamodb:Scan`, `s3:PutObject`, `s3:GetObject` e `s3:DeleteObject` nos
   recursos do laboratório;
-- pedidos: `dynamodb:GetItem`, `dynamodb:Scan` e `sqs:SendMessage`;
-- processadora: `dynamodb:GetItem`, `dynamodb:TransactWriteItems` e permissão
-  para consumir a fila por meio do event source mapping;
+- pedidos: `dynamodb:GetItem`, `dynamodb:PutItem`, `dynamodb:Scan` e
+  `sqs:SendMessage`;
+- processadora: `dynamodb:GetItem`, `dynamodb:PutItem`, `dynamodb:UpdateItem`,
+  `dynamodb:TransactWriteItems` e permissão para consumir a fila por meio do
+  event source mapping;
 - CloudWatch Logs para as três funções.
 
 O bucket deve aceitar PUT pelo CORS da origem do frontend, com o cabeçalho

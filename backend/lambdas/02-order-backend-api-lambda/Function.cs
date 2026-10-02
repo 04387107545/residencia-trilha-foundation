@@ -82,15 +82,27 @@ public sealed class Function
         if (product.Stock < input.Quantity) return Json(409, new { message = "Insufficient stock." });
 
         var orderId = Guid.NewGuid().ToString();
+        var createdAt = DateTimeOffset.UtcNow;
         var orderEvent = new OrderCreatedEvent(
             orderId,
             RequiredClaim(claims, "sub"),
             product.SellerId,
             product.Id,
             input.Quantity,
-            DateTimeOffset.UtcNow,
+            createdAt,
             orderId
         );
+        var pendingOrder = new SellerOrder(
+            orderEvent.OrderId,
+            orderEvent.BuyerId,
+            orderEvent.SellerId,
+            orderEvent.ProductId,
+            orderEvent.Quantity,
+            "pending",
+            createdAt
+        );
+
+        await _repository.CreatePendingOrder(pendingOrder, orderEvent.IdempotencyKey);
 
         await _sqs.SendMessageAsync(new SendMessageRequest
         {
@@ -98,7 +110,7 @@ public sealed class Function
             MessageBody = JsonSerializer.Serialize(orderEvent, JsonOptions),
         });
 
-        return Json(202, new { orderId, status = "accepted" });
+        return Json(202, new { orderId, status = "pending", order = pendingOrder });
     }
 
     private async Task<APIGatewayProxyResponse> ListSellerOrders(

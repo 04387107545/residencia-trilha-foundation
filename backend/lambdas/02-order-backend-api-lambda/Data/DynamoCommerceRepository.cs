@@ -46,6 +46,28 @@ public sealed class DynamoCommerceRepository : ICommerceRepository
     public Task<IReadOnlyList<SellerOrder>> ListBuyerOrders(string buyerId) =>
         ListOrders("buyerId", buyerId);
 
+    public async Task CreatePendingOrder(SellerOrder order, string idempotencyKey)
+    {
+        await _dynamoDb.PutItemAsync(new PutItemRequest
+        {
+            TableName = _tableName,
+            Item = new Dictionary<string, AttributeValue>
+            {
+                ["pk"] = new() { S = $"ORDER#{order.Id}" },
+                ["entityType"] = new() { S = "ORDER" },
+                ["id"] = new() { S = order.Id },
+                ["buyerId"] = new() { S = order.BuyerId },
+                ["sellerId"] = new() { S = order.SellerId },
+                ["productId"] = new() { S = order.ProductId },
+                ["quantity"] = new() { N = order.Quantity.ToString() },
+                ["status"] = new() { S = order.Status },
+                ["idempotencyKey"] = new() { S = idempotencyKey },
+                ["createdAt"] = new() { S = order.CreatedAt.ToString("O") },
+            },
+            ConditionExpression = "attribute_not_exists(pk)",
+        });
+    }
+
     public Task<IReadOnlyList<SellerOrder>> ListSellerOrders(string sellerId) =>
         ListOrders("sellerId", sellerId);
 
