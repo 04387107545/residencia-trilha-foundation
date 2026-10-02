@@ -27,7 +27,7 @@ lib_dynamodb_version="$(package_version '@aws-sdk/lib-dynamodb')"
 presigner_version="$(package_version '@aws-sdk/s3-request-presigner')"
 
 # A Layer fixa as mesmas versões já registradas no package-lock da Lambda de
-# catálogo. nodejs/node_modules é um dos caminhos reconhecidos pelo Node.js 22.
+# catálogo. nodejs/node_modules é um dos caminhos reconhecidos pelo Node.js 24.
 npm install --prefix "${layer_dir}/nodejs" --package-lock=false --no-save \
   "@aws-sdk/client-s3@${client_s3_version}" \
   "@aws-sdk/client-dynamodb@${client_dynamodb_version}" \

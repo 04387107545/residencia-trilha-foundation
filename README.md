@@ -181,9 +181,9 @@ do aluno é empacotar, publicar e conectar os recursos pelo Console da AWS.
 
 | Lambda | Runtime | Responsabilidade |
 | --- | --- | --- |
-| `catalog-backend-api-lambda` | TypeScript (Node.js 22) | Consultar e cadastrar produtos no DynamoDB e gerar URLs temporárias para imagens no S3 |
+| `catalog-backend-api-lambda` | TypeScript (Node.js 24) | Consultar e cadastrar produtos no DynamoDB e gerar URLs temporárias para imagens no S3 |
 | `order-backend-api-lambda` | .NET 8 | Consultar compras e vendas e publicar novas compras na SQS |
-| `order-processor-lambda` | TypeScript (Node.js 22) | Consumir a SQS e atualizar estoque e pedido numa transação do DynamoDB |
+| `order-processor-lambda` | TypeScript (Node.js 24) | Consumir a SQS e atualizar estoque e pedido numa transação do DynamoDB |
 
 Na Sprint 2, as Lambdas usam `DATA_SOURCE=dynamodb`. A tabela substitui o mock
 em memória e torna o fluxo consistente entre Lambdas e cold starts. Os adapters
