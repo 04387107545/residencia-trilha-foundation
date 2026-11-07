@@ -185,6 +185,41 @@ Roteiro executado em cada estado pelo frontend publicado: criar produto com vár
 
 O estado final do ambiente é `DATA_SOURCE=rds` nas três Lambdas. O PostgreSQL com RDS Proxy dá transação única para pedido e estoque e conexões controladas, sem alterar a API do frontend. O DynamoDB continua disponível como caminho de retorno manual, com o mesmo código e as mesmas permissões da Sprint 2.
 
+## Topologia final da Sprint 3
+
+A VPC `residencia-marketplace-vpc` (`10.0.0.0/24`) é totalmente privada. Não há Internet Gateway, NAT Gateway nem rota `0.0.0.0/0`.
+
+| Componente | Configuração |
+|---|---|
+| Subnets | `residencia-private-a` (`10.0.0.0/26`, us-east-1a) e `residencia-private-b` (`10.0.0.64/26`, us-east-1b) |
+| Route table | `residencia-private-rt`, associada às duas subnets. Rotas: `10.0.0.0/24` local e os prefix lists do DynamoDB e do S3, via Gateway endpoints |
+| Endpoints | Gateway: DynamoDB e S3. Interface: SQS e Secrets Manager, com Private DNS e `residencia-endpoints-sg` |
+| Banco | RDS PostgreSQL `residencia-marketplace-postgres`, Single-AZ, sem acesso público |
+| Proxy | RDS Proxy `residencia-marketplace-proxy`, TLS obrigatório, status Available, target saudável |
+
+### Cadeia de security groups
+
+| Security group | Entrada |
+|---|---|
+| `residencia-lambda-sg` | Nenhuma |
+| `residencia-proxy-sg` | PostgreSQL 5432, só de `residencia-lambda-sg` |
+| `residencia-rds-sg` | PostgreSQL 5432, só de `residencia-proxy-sg` |
+| `residencia-endpoints-sg` | HTTPS 443, só de `residencia-lambda-sg` |
+
+As origens são sempre security groups, nunca CIDRs. O RDS Proxy cria um endpoint de interface gerenciado pela AWS na VPC, que não faz parte dos quatro endpoints do desenho.
+
+### Integração futura com uma API pública
+
+Esta topologia não resolve saída para a internet, e isso é intencional. Se uma integração futura exigir chamar uma API pública, ela deve ser tratada como uma mudança separada, com revisão própria, e não como ajuste desta Sprint:
+
+- criar duas public subnets, uma por AZ;
+- criar um Internet Gateway anexado à VPC e uma route table pública com `0.0.0.0/0` para ele;
+- criar um NAT Gateway em uma public subnet, com Elastic IP;
+- adicionar `0.0.0.0/0` para o NAT na route table privada das Lambdas;
+- manter RDS, Proxy e endpoints nas subnets privadas, sem rota direta para o IGW.
+
+Essa mudança acrescenta custo fixo do NAT e aumenta a superfície de saída, por isso não faz parte do desenho obrigatório atual.
+
 ## Permissões mínimas
 
 - catálogo: `dynamodb:GetItem`, `dynamodb:PutItem`, `dynamodb:DeleteItem`,
