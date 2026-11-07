@@ -152,6 +152,39 @@ DynamoDB e Interface endpoints para SQS e Secrets Manager. Um Internet Gateway
 sozinho não fornece saída IPv4 às ENIs privadas da Lambda e não faz parte do
 desenho obrigatório da Sprint 3.
 
+## Validação da Sprint 3: dois estados e decisão final
+
+As três Lambdas (catálogo, pedidos e processadora) rodam nas subnets privadas da VPC `residencia-marketplace-vpc`, sem Internet Gateway nem NAT. O único seletor de fonte de dados é `DATA_SOURCE`. Não existe fallback automático nem dual write: a troca é manual e cada Lambda usa um único adapter por vez.
+
+### Estados testados
+
+| Estado | `DATA_SOURCE` | Onde ficam os dados | Caminho de rede das Lambdas |
+|---|---|---|---|
+| Sprint 2 | `dynamodb` | Tabela `residencia-foundation-marketplace`, bucket `residencia-foundation-product-images-<account-id>` e fila `order-events-queue` | Gateway endpoints de DynamoDB e S3 e Interface endpoint do SQS |
+| Sprint 3 | `rds` | PostgreSQL `residencia-marketplace-postgres`, banco `marketplace` | RDS Proxy, com credenciais lidas do Secrets Manager por Interface endpoint |
+
+Roteiro executado em cada estado pelo frontend publicado: criar produto com várias imagens, editar, comprar com um segundo usuário, observar o pedido `pending`, acompanhar a SQS, confirmar `processed` e comparar compras, vendas e identificação do comprador.
+
+- Em `dynamodb`, o roteiro passou com a tabela existente. Os pedidos antigos continuaram visíveis e o PostgreSQL ficou com 4 pedidos, sem receber o pedido novo.
+- Em `rds`, o roteiro passou. No PostgreSQL, `orders` foi de 4 para 5 pedidos, todos `processed`, e o estoque do produto comprado caiu de 10 para 9, na mesma transação do pedido.
+
+### Valores de configuração usados em modo RDS
+
+| Variável | Valor |
+|---|---|
+| `DATA_SOURCE` | `rds` |
+| `DB_HOST` | `residencia-marketplace-proxy.proxy-cirasu80i0wf.us-east-1.rds.amazonaws.com` (endpoint do RDS Proxy, nunca o da instância) |
+| `DB_PORT` | `5432` |
+| `DB_NAME` | `marketplace` |
+| `DB_SECRET_ARN` | ARN do secret gerenciado pelo RDS no Secrets Manager |
+| `DB_SSL` | `true` |
+
+`DB_USER`, `DB_PASSWORD` e connection string completa não são configurados. Usuário e senha são lidos do Secrets Manager em tempo de execução. As variáveis `MARKETPLACE_TABLE_NAME`, `PRODUCT_IMAGES_BUCKET`, `ORDER_QUEUE_URL` e `ALLOWED_ORIGIN` permanecem em todas as funções, para que o retorno ao DynamoDB seja só trocar `DATA_SOURCE`. Cuidado: o valor precisa ser exatamente `true`. Um espaço no fim desliga o TLS e o RDS Proxy recusa a conexão.
+
+### Decisão final
+
+O estado final do ambiente é `DATA_SOURCE=rds` nas três Lambdas. O PostgreSQL com RDS Proxy dá transação única para pedido e estoque e conexões controladas, sem alterar a API do frontend. O DynamoDB continua disponível como caminho de retorno manual, com o mesmo código e as mesmas permissões da Sprint 2.
+
 ## Permissões mínimas
 
 - catálogo: `dynamodb:GetItem`, `dynamodb:PutItem`, `dynamodb:DeleteItem`,
