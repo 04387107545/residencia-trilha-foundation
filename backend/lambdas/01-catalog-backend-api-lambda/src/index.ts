@@ -125,6 +125,7 @@ const withImageUrls = async <T extends { imageKeys: string[]; imageKey?: string 
   };
 };
 
+// Sprint 4: handler validado pela pipeline de entrega continua do backend.
 export const handler = async (
   event: APIGatewayProxyEvent,
 ): Promise<APIGatewayProxyResult> => {
